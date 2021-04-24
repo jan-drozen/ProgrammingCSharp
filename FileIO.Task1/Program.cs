@@ -11,13 +11,13 @@ namespace FileIO.Task1
     {
         static void Main(string[] args)
         {
-            using var sr = new StreamReader("testFile02.txt");
+            using var sr = new StreamReader("test01.txt");
             var cols = Int32.Parse(sr.ReadLine());
             var rows = Int32.Parse(sr.ReadLine());
             var mapStub = new string[rows];
 
-            GameState initialState = null;
-            var mapList = new List<byte[]>(rows);
+            var initialStates = new List<GameState>();
+            byte[][] mapList = new byte[rows][];
             for (int i = 0; i < rows; i++)
             {
                 var line = sr.ReadLine();
@@ -34,17 +34,21 @@ namespace FileIO.Task1
                         direction = Direction.Left;
                     if (c == '^')
                         direction = Direction.Up;
-                    initialState = new GameState(new Point(i, index), direction);
+                    initialStates.Add(new GameState(new Point(i, index), direction));
                     return (byte)0;
                 });
-                mapList.Add(byteArray.ToArray());
+                mapList[i]=byteArray.ToArray();
             }
-            var game = new Game(cols, rows, mapList.ToArray(), initialState);
-
+            var game = new Game(cols, rows, mapList, initialStates.ToArray());
+            var players = initialStates.Count;
             for (int i = 0; i < 2000000; i++)
             {
-                game.DoMove();
-                Thread.Sleep(300);
+                for (int p = 0; p < players; p++)
+                {
+                    game.DoMove(p);
+                }
+                game.WriteStateOut();
+                Thread.Sleep(1000);
             }
         }
 
@@ -55,44 +59,46 @@ namespace FileIO.Task1
         public int Columns { get; }
         public int Rows { get; }
         public byte[][] Map { get; }
-        public GameState State { get; private set; }
+        public GameState[] States { get; private set; }        
 
-        public Game(int columns, int rows, byte[][] map, GameState initialState)
+        public Game(int columns, int rows, byte[][] map, GameState[] states)
         {
             Columns = columns;
             Rows = rows;
             Map = map;
-            State = initialState;
+            States = states;
         }
 
-        public void DoMove()
+        public void DoMove(int order)
         {
+            var State = States[order];
             var pointAhead = GetPointAhead(State.Position, State.Direction);
             var pointAheadRight = GetRightHandFieldValue(pointAhead, State.Direction);
             var pointRight = GetRightHandFieldValue(State.Position, State.Direction);
             //pokud muzu jit rovne a po prave ruce bude zed, tak jdu rovne
-            if (CanGoForward() && pointAheadRight == 1)
-                GoForward();
+            if (CanGoForward(order) && pointAheadRight == 1)
+                GoForward(order);
             //pokud nemam po prave ruce zed, tak se otocim doprava(po smeru hod. rucicek) (v minulem kroku jsem ji tam jeste musel mit)
             else if (pointRight == 0)
-                TurnClockwise();
+                TurnClockwise(order);
             //pokud mam po prave ruce zed, ale nemuzu jit rovne, tak se otocim proti smeru hod. rucicek
-            else if (pointRight == 1 && !CanGoForward())
-                TurnCounterclockwise();
-            else if (CanGoForward())
-                GoForward();
+            else if (pointRight == 1 && !CanGoForward(order))
+                TurnCounterclockwise(order);
+            else if (CanGoForward(order))
+                GoForward(order);
         }
 
-        private void WriteStateOut()
+        public void WriteStateOut()
         {
             var sb = new StringBuilder();
             for (int i = 0; i < Rows; i++)
             {
                 for (int j = 0; j < Columns; j++)
                 {
-                    if (State.Position.Row == i && State.Position.Column == j)
+                    var occupiedField = States.FirstOrDefault(s => s.Position.Row == i && s.Position.Column == j);
+                    if (occupiedField != null)
                     {
-                        sb.Append(GetDirectionString(State.Direction));
+                        sb.Append(GetDirectionString(occupiedField.Direction));
                         continue;
                     }
                     sb.Append(Map[i][j] == 0 ? "." : "X");                    
@@ -114,22 +120,21 @@ namespace FileIO.Task1
             }
         }
 
-        private void GoForward()
-        {            
-            State = new GameState(GetPointAhead(State.Position, State.Direction), State.Direction);
-            WriteStateOut();
+        private void GoForward(int order)
+        {
+            Map[States[order].Position.Row][States[order].Position.Column] = 0;
+            States[order] = new GameState(GetPointAhead(States[order].Position, States[order].Direction), States[order].Direction);
+            Map[States[order].Position.Row][States[order].Position.Column] = 1;
         }
 
-        private void TurnClockwise()
+        private void TurnClockwise(int order)
         {            
-            State = new GameState(State.Position, TurnClockwise(State.Direction));
-            WriteStateOut();
+            States[order] = new GameState(States[order].Position, TurnClockwise(States[order].Direction));            
         }
 
-        private void TurnCounterclockwise()
-        {            
-            State = new GameState(State.Position, TurnCounterclockwise(State.Direction));
-            WriteStateOut();
+        private void TurnCounterclockwise(int order)
+        {
+            States[order] = new GameState(States[order].Position, TurnCounterclockwise(States[order].Direction));
         }
 
         private Direction TurnClockwise(Direction direction)
@@ -141,9 +146,9 @@ namespace FileIO.Task1
             return (Direction)((((int)direction+4) - 1) % 4);
         }
 
-        private bool CanGoForward()
+        private bool CanGoForward(int order)
         {
-            var pointAhead = GetPointAhead(State.Position, State.Direction);
+            var pointAhead = GetPointAhead(States[order].Position, States[order].Direction);
             return Map[pointAhead.Row][pointAhead.Column] == 0;
         }
 
